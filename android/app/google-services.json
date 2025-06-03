@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "664752376040",
+    "project_id": "west-segregation",
+    "storage_bucket": "west-segregation.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:664752376040:android:4f1a074dce58d01076615d",
+        "android_client_info": {
+          "package_name": "com.example.west_segregation"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxdc1peABJydNJkpWs5N6mrKhQSfZr8iw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
