@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:west_segregation/home.dart';
-import 'package:west_segregation/homev1.dart';
 
 class MaterialSegregationApp extends StatelessWidget {
   const MaterialSegregationApp({super.key});

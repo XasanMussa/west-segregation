@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:syncfusion_flutter_gauges/gauges.dart'; // Add this import for the gauge
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _metalCount = 0;
   int _dryCount = 0;
   int _wetCount = 0;
+  double _irValue = 0.0; // 0 to 100 for the gauge
 
   // Store previous RTDB values to detect 0->1 transitions
   int _prevMetalValue = 0;
@@ -155,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
 
     // Listen to /wet key
-    _rtdbRef.child('waterDetected').onValue.listen((event) {
+    _rtdbRef.child('wetDetected').onValue.listen((event) {
       final value = _parseRTDBValue(event.snapshot.value);
       if (value != null) {
         _handleRealtimeValueChange(
@@ -167,10 +169,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _prevWetValue = value;
       }
     });
+
+    // Listen to /irDetected key for the gauge
+    _rtdbRef.child('irDetected').onValue.listen((event) {
+      final value = _parseRTDBValue(event.snapshot.value);
+      if (value != null) {
+        setState(() {
+          _irValue = value == 1 ? 100.0 : 0.0;
+        });
+      }
+    });
   }
 
   int? _parseRTDBValue(Object? value) {
-    // RTDB values can be int, double, String — try to parse safely
     if (value == null) return null;
     if (value is int) return value;
     if (value is double) return value.toInt();
@@ -186,11 +197,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required int prevValue,
     required VoidCallback onIncrement,
   }) {
-    // Only trigger increment on 0->1 transition
     if (prevValue == 0 && newValue == 1) {
       onIncrement();
     }
-    // ignore other changes, including 1->0 reset
   }
 
   void _incrementMetalCount() {
@@ -276,69 +285,159 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                children: [
-                  _buildStatsSummary(),
-                  const SizedBox(height: 30),
-                  Expanded(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _buildBucket(
-                          context: context,
-                          label: 'Metal',
-                          fillLevel: _metalLevel,
-                          color: Colors.blueGrey,
-                          controller: _metalController,
-                          count: _metalCount,
-                        ),
-                        _buildBucket(
-                          context: context,
-                          label: 'Dry',
-                          fillLevel: _dryLevel,
-                          color: Colors.orange,
-                          controller: _dryController,
-                          count: _dryCount,
-                        ),
-                        _buildBucket(
-                          context: context,
-                          label: 'Wet',
-                          fillLevel: _wetLevel,
-                          color: Colors.lightBlue,
-                          controller: _wetController,
-                          count: _wetCount,
-                        ),
-                      ],
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0), // Reduced padding
+                child: Column(
+                  children: [
+                    // Gauge with reduced height
+                    _buildIRGauge(),
+                    const SizedBox(height: 10),
+                    // Stats summary
+                    _buildStatsSummary(),
+                    const SizedBox(height: 15),
+                    // Buckets with reduced height
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.30,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _buildBucket(
+                            context: context,
+                            label: 'Metal',
+                            fillLevel: _metalLevel,
+                            color: Colors.blueGrey,
+                            controller: _metalController,
+                            count: _metalCount,
+                          ),
+                          _buildBucket(
+                            context: context,
+                            label: 'Dry',
+                            fillLevel: _dryLevel,
+                            color: Colors.orange,
+                            controller: _dryController,
+                            count: _dryCount,
+                          ),
+                          _buildBucket(
+                            context: context,
+                            label: 'Wet',
+                            fillLevel: _wetLevel,
+                            color: Colors.lightBlue,
+                            controller: _wetController,
+                            count: _wetCount,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 60,
-                      child: FilledButton.icon(
-                        onPressed: _resetCounts,
-                        icon: const Icon(Icons.restart_alt),
-                        label: const Text(
-                          'RESET ALL COUNTS',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
+                    // Reset button with reduced height
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 50, // Reduced height
+                        child: FilledButton.icon(
+                          onPressed: _resetCounts,
+                          icon: const Icon(Icons.restart_alt),
+                          label: const Text(
+                            'RESET ALL COUNTS',
+                            style: TextStyle(
+                                fontSize: 16, // Reduced font size
+                                fontWeight: FontWeight.bold),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildIRGauge() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Column(
+          children: [
+            const Text(
+              'IR Sensor Status',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 120,
+              child: SfRadialGauge(
+                axes: <RadialAxis>[
+                  RadialAxis(
+                    minimum: 0,
+                    maximum: 100,
+                    showLabels: false,
+                    showTicks: false,
+                    axisLineStyle: const AxisLineStyle(
+                      thickness: 0.1,
+                      cornerStyle: CornerStyle.bothCurve,
                     ),
-                  )
+                    ranges: <GaugeRange>[
+                      GaugeRange(
+                        startValue: 0,
+                        endValue: _irValue,
+                        color: _irValue > 0 ? Colors.green : Colors.grey,
+                        startWidth: 20,
+                        endWidth: 20,
+                      ),
+                    ],
+                    pointers: <GaugePointer>[
+                      NeedlePointer(
+                        value: _irValue,
+                        needleLength: 0.6,
+                        needleStartWidth: 1,
+                        needleEndWidth: 5,
+                        knobStyle: const KnobStyle(
+                          knobRadius: 0.08,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ],
+                    annotations: <GaugeAnnotation>[
+                      GaugeAnnotation(
+                        widget: Text(
+                          '${_irValue.toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        angle: 90,
+                        positionFactor: 0.5,
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
+            Text(
+              _irValue > 0 ? 'Object Detected' : 'No Object Detected',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: _irValue > 0 ? Colors.green : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -397,8 +496,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required AnimationController controller,
     required int count,
   }) {
-    final double bucketHeight = MediaQuery.of(context).size.height * 0.25;
-    final double bucketWidth = MediaQuery.of(context).size.width * 0.25;
+    final double bucketHeight = MediaQuery.of(context).size.height * 0.20;
+    final double bucketWidth = MediaQuery.of(context).size.width * 0.20;
 
     return Column(
       mainAxisSize: MainAxisSize.min,

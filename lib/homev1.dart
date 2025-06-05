@@ -41,6 +41,11 @@
 //   int _dryCount = 0;
 //   int _wetCount = 0;
 
+//   // Store previous RTDB values to detect 0->1 transitions
+//   int _prevMetalValue = 0;
+//   int _prevDryValue = 0;
+//   int _prevWetValue = 0;
+
 //   late AnimationController _metalController;
 //   late AnimationController _dryController;
 //   late AnimationController _wetController;
@@ -86,7 +91,7 @@
 //         });
 //       }
 
-//       // Firestore listener to keep counts in sync and animate on increments
+//       // Firestore snapshot listener to keep UI in sync with backend changes
 //       _logDocument!.snapshots().listen((snapshot) {
 //         if (snapshot.exists) {
 //           setState(() {
@@ -94,7 +99,6 @@
 //             final newDry = snapshot['dryCount'] ?? 0;
 //             final newWet = snapshot['waterCount'] ?? 0;
 
-//             // Animate only if Firestore count increased (to keep animation consistent)
 //             if (newMetal > _metalCount) {
 //               _metalController.forward(from: 0);
 //             }
@@ -122,41 +126,109 @@
 //   }
 
 //   void _setupRealtimeListeners() {
-//     _rtdbRef.child('detectionEvent').onValue.listen((event) {
-//       final value = event.snapshot.value as String?;
-//       if (value != null && value.isNotEmpty) {
-//         _handleRealtimeDetection(value);
-//         // Reset after handling
-//         _rtdbRef.child('detectionEvent').set("");
+//     // Listen to /metal key
+//     _rtdbRef.child('metalDetected').onValue.listen((event) {
+//       final value = _parseRTDBValue(event.snapshot.value);
+//       if (value != null) {
+//         _handleRealtimeValueChange(
+//           type: 'metal',
+//           newValue: value,
+//           prevValue: _prevMetalValue,
+//           onIncrement: () => _incrementMetalCount(),
+//         );
+//         _prevMetalValue = value;
+//       }
+//     });
+
+//     // Listen to /dry key
+//     _rtdbRef.child('dryDetected').onValue.listen((event) {
+//       final value = _parseRTDBValue(event.snapshot.value);
+//       if (value != null) {
+//         _handleRealtimeValueChange(
+//           type: 'dry',
+//           newValue: value,
+//           prevValue: _prevDryValue,
+//           onIncrement: () => _incrementDryCount(),
+//         );
+//         _prevDryValue = value;
+//       }
+//     });
+
+//     // Listen to /wet key
+//     _rtdbRef.child('wetDetected').onValue.listen((event) {
+//       final value = _parseRTDBValue(event.snapshot.value);
+//       if (value != null) {
+//         _handleRealtimeValueChange(
+//           type: 'wet',
+//           newValue: value,
+//           prevValue: _prevWetValue,
+//           onIncrement: () => _incrementWetCount(),
+//         );
+//         _prevWetValue = value;
 //       }
 //     });
 //   }
 
-//   void _handleRealtimeDetection(String type) {
-//     // Update UI immediately & animate
+//   int? _parseRTDBValue(Object? value) {
+//     // RTDB values can be int, double, String — try to parse safely
+//     if (value == null) return null;
+//     if (value is int) return value;
+//     if (value is double) return value.toInt();
+//     if (value is String) {
+//       return int.tryParse(value);
+//     }
+//     return null;
+//   }
+
+//   void _handleRealtimeValueChange({
+//     required String type,
+//     required int newValue,
+//     required int prevValue,
+//     required VoidCallback onIncrement,
+//   }) {
+//     // Only trigger increment on 0->1 transition
+//     if (prevValue == 0 && newValue == 1) {
+//       onIncrement();
+//     }
+//     // ignore other changes, including 1->0 reset
+//   }
+
+//   void _incrementMetalCount() {
 //     setState(() {
-//       switch (type) {
-//         case 'metal':
-//           _metalCount++;
-//           _metalController.forward(from: 0);
-//           break;
-//         case 'dry':
-//           _dryCount++;
-//           _dryController.forward(from: 0);
-//           break;
-//         case 'wet':
-//           _wetCount++;
-//           _wetController.forward(from: 0);
-//           break;
-//         default:
-//           print('Unknown detection type from RTDB: $type');
-//           return;
-//       }
+//       _metalCount++;
+//       _metalController.forward(from: 0);
 //       _updateFillLevels();
 //     });
+//     _updateFirestoreCount('metalCount');
+//   }
 
-//     // Update Firestore counts
-//     _handleDetection(type);
+//   void _incrementDryCount() {
+//     setState(() {
+//       _dryCount++;
+//       _dryController.forward(from: 0);
+//       _updateFillLevels();
+//     });
+//     _updateFirestoreCount('dryCount');
+//   }
+
+//   void _incrementWetCount() {
+//     setState(() {
+//       _wetCount++;
+//       _wetController.forward(from: 0);
+//       _updateFillLevels();
+//     });
+//     _updateFirestoreCount('waterCount');
+//   }
+
+//   Future<void> _updateFirestoreCount(String field) async {
+//     if (_logDocument == null) return;
+//     try {
+//       await _logDocument!.update({
+//         field: FieldValue.increment(1),
+//       });
+//     } catch (e) {
+//       print("Error updating Firestore field $field: $e");
+//     }
 //   }
 
 //   void _updateFillLevels() {
@@ -165,42 +237,14 @@
 //     _wetLevel = (_wetCount / _maxCapacity).clamp(0.0, 1.0);
 //   }
 
-//   void _handleDetection(String type) async {
-//     if (_logDocument == null) return;
-
-//     try {
-//       Map<String, dynamic> updateData = {};
-
-//       switch (type) {
-//         case 'metal':
-//           updateData['metalCount'] = FieldValue.increment(1);
-//           break;
-//         case 'dry':
-//           updateData['dryCount'] = FieldValue.increment(1);
-//           break;
-//         case 'wet':
-//           updateData['waterCount'] = FieldValue.increment(1);
-//           break;
-//         default:
-//           throw Exception('Invalid detection type: $type');
-//       }
-
-//       await _logDocument!.update(updateData);
-//     } catch (e) {
-//       print("Error updating Firestore: $e");
-//     }
-//   }
-
 //   Future<void> _resetCounts() async {
 //     if (_logDocument == null) return;
-
 //     try {
 //       await _logDocument!.update({
 //         'metalCount': 0,
 //         'dryCount': 0,
 //         'waterCount': 0,
 //       });
-
 //       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
 //         content: Text('All counts have been reset to zero'),
 //         backgroundColor: Colors.green,
