@@ -172,13 +172,15 @@ class _SignInScreenState extends State<SignInScreen> {
           children: [
             Text(
               'Welcome Back',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Colors.green[800],
+                letterSpacing: 1.2,
+              ),
             ),
             const SizedBox(height: 8),
-            Text('Sign in to monitor your segregation system',
+            Text('Sign in to monitor your  system',
                 style: TextStyle(color: Colors.grey[600])),
             const SizedBox(height: 40),
             TextField(
