@@ -41,6 +41,8 @@ dependencies:
   cloud_firestore: ^5.6.8
   firebase_database: ^11.3.6
   syncfusion_flutter_gauges: ^29.1.38
+  flutter_local_notifications: ^19.3.0
+  permission_handler: ^11.0.1
 
 dev_dependencies:
   flutter_test:

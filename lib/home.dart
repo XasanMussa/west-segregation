@@ -3,10 +3,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart'; // Add this import for the gauge
+import 'package:west_segregation/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await NotificationService().init();
   runApp(const MyApp());
 }
 
@@ -85,16 +87,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       DocumentSnapshot snapshot = await _logDocument!.get();
 
       if (snapshot.exists) {
+        final metal = snapshot['metalCount'] ?? 0;
+        final dry = snapshot['dryCount'] ?? 0;
+        final wet = snapshot['waterCount'] ?? 0;
         setState(() {
-          _metalCount = snapshot['metalCount'] ?? 0;
-          _dryCount = snapshot['dryCount'] ?? 0;
-          _wetCount = snapshot['waterCount'] ?? 0;
-          _updateFillLevels();
+          _metalCount = metal;
+          _dryCount = dry;
+          _wetCount = wet;
+          _metalLevel = (metal / _maxCapacity).clamp(0.0, 1.0);
+          _dryLevel = (dry / _maxCapacity).clamp(0.0, 1.0);
+          _wetLevel = (wet / _maxCapacity).clamp(0.0, 1.0);
+          _metalController.value = _metalLevel;
+          _dryController.value = _dryLevel;
+          _wetController.value = _wetLevel;
         });
       }
 
       // Firestore snapshot listener to keep UI in sync with backend changes
-      _logDocument!.snapshots().listen((snapshot) {
+      _logDocument!.snapshots().listen((snapshot) async {
         if (snapshot.exists) {
           setState(() {
             final newMetal = snapshot['metalCount'] ?? 0;
@@ -115,7 +125,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             _dryCount = newDry;
             _wetCount = newWet;
             _updateFillLevels();
+            // Ensure fill levels are clamped to full if count >= maxCapacity
+            if (_metalCount >= _maxCapacity) _metalLevel = 1.0;
+            if (_dryCount >= _maxCapacity) _dryLevel = 1.0;
+            if (_wetCount >= _maxCapacity) _wetLevel = 1.0;
           });
+
+          // Notification logic for any change (including manual DB edits)
+          if (_metalCount > _maxCapacity && _prevMetalValue <= _maxCapacity) {
+            await NotificationService().showFullBucketNotification('Metal');
+            await _storeNotificationInFirestore('metal');
+          }
+          if (_dryCount > _maxCapacity && _prevDryValue <= _maxCapacity) {
+            await NotificationService().showFullBucketNotification('Dry');
+            await _storeNotificationInFirestore('dry');
+          }
+          if (_wetCount > _maxCapacity && _prevWetValue <= _maxCapacity) {
+            await NotificationService().showFullBucketNotification('Wet');
+            await _storeNotificationInFirestore('wet');
+          }
+          _prevMetalValue = _metalCount;
+          _prevDryValue = _dryCount;
+          _prevWetValue = _wetCount;
         }
       });
 
@@ -202,31 +233,58 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _incrementMetalCount() {
+  void _incrementMetalCount() async {
+    if (_metalCount >= _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Metal');
+      await _storeNotificationInFirestore('metal');
+      return;
+    }
     setState(() {
       _metalCount++;
       _metalController.forward(from: 0);
       _updateFillLevels();
     });
     _updateFirestoreCount('metalCount');
+    if (_metalCount == _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Metal');
+      await _storeNotificationInFirestore('metal');
+    }
   }
 
-  void _incrementDryCount() {
+  void _incrementDryCount() async {
+    if (_dryCount >= _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Dry');
+      await _storeNotificationInFirestore('dry');
+      return;
+    }
     setState(() {
       _dryCount++;
       _dryController.forward(from: 0);
       _updateFillLevels();
     });
     _updateFirestoreCount('dryCount');
+    if (_dryCount == _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Dry');
+      await _storeNotificationInFirestore('dry');
+    }
   }
 
-  void _incrementWetCount() {
+  void _incrementWetCount() async {
+    if (_wetCount >= _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Wet');
+      await _storeNotificationInFirestore('wet');
+      return;
+    }
     setState(() {
       _wetCount++;
       _wetController.forward(from: 0);
       _updateFillLevels();
     });
     _updateFirestoreCount('waterCount');
+    if (_wetCount == _maxCapacity) {
+      await NotificationService().showFullBucketNotification('Wet');
+      await _storeNotificationInFirestore('wet');
+    }
   }
 
   Future<void> _updateFirestoreCount(String field) async {
@@ -237,6 +295,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       });
     } catch (e) {
       print("Error updating Firestore field $field: $e");
+    }
+  }
+
+  Future<void> _storeNotificationInFirestore(String bucketType) async {
+    try {
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'bucketType': bucketType,
+        'message':
+            '${bucketType[0].toUpperCase()}${bucketType.substring(1)} bucket is full, please clear it.',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error storing notification: $e');
     }
   }
 
@@ -282,6 +353,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         centerTitle: true,
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const NotificationsScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -462,6 +545,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildStatItem(String label, int count, Color color) {
+    String displayText = count > _maxCapacity ? 'Full' : count.toString();
     return Column(
       children: [
         Container(
@@ -471,7 +555,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             shape: BoxShape.circle,
           ),
           child: Text(
-            count.toString(),
+            displayText,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -503,7 +587,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '$count/$_maxCapacity',
+          '${count > _maxCapacity ? _maxCapacity : count}/$_maxCapacity',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
@@ -563,6 +647,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ],
+    );
+  }
+}
+
+class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notifications'),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('notifications')
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('No notifications'));
+          }
+          final notifications = snapshot.data!.docs;
+          return ListView.builder(
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final doc = notifications[index];
+              final message = doc['message'] ?? '';
+              final timestamp = (doc['timestamp'] as Timestamp?)?.toDate();
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: ListTile(
+                  leading: const Icon(Icons.notifications),
+                  title: Text(message),
+                  subtitle:
+                      timestamp != null ? Text('${timestamp.toLocal()}') : null,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () async {
+                      await doc.reference.delete();
+                    },
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
